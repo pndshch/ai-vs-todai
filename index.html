@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>AI vs 東大</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  overflow: hidden; background: #0a0a1a;
+  font-family: 'Helvetica Neue', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+canvas { display: block; position: fixed; top: 0; left: 0; z-index: 0; }
+
+/* ===== HUD ===== */
+#hud {
+  position: fixed; top: 0; left: 0; right: 0;
+  pointer-events: none; z-index: 10; display: none;
+}
+#scoreboard {
+  display: flex; justify-content: center; align-items: center; gap: 20px;
+  padding: 10px 24px; margin: 10px auto 0;
+  width: fit-content; min-width: 320px;
+  background: linear-gradient(180deg, rgba(15,15,40,0.92), rgba(8,8,25,0.88));
+  border: 2px solid rgba(100,140,255,0.35);
+  border-radius: 12px;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.6);
+}
+.score-side { text-align: center; min-width: 80px; }
+.score-label { font-size: 11px; color: #7788bb; text-transform: uppercase; letter-spacing: 2px; }
+.score-value { font-size: 32px; font-weight: 800; }
+.player-score { color: #ff6699; text-shadow: 0 0 12px rgba(255,102,153,0.4); }
+.ai-score { color: #66ccff; text-shadow: 0 0 12px rgba(102,204,255,0.4); }
+.score-divider { font-size: 24px; color: #445577; font-weight: 300; }
+#round-info { text-align: center; font-size: 12px; color: #99aabb; margin-top: 3px; letter-spacing: 1px; }
+#timer-wrap {
+  width: 260px; margin: 6px auto 0; text-align: center;
+}
+#timer-bar-bg {
+  width: 100%; height: 6px; background: rgba(255,255,255,0.08);
+  border-radius: 3px; overflow: hidden;
+}
+#timer-bar {
+  width: 100%; height: 100%;
+  background: linear-gradient(90deg, #44ee88, #eedd44, #ee4444);
+  border-radius: 3px; transition: width 0.15s linear;
+}
+#timer-text { font-size: 16px; color: #eebb33; margin-top: 2px; font-weight: 800; }
+
+/* ===== Question + Answers (HTML overlay) ===== */
+#qa-panel {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  z-index: 10; display: none;
+  padding: 0 12px 16px;
+  background: linear-gradient(0deg, rgba(8,8,24,0.95) 0%, rgba(8,8,24,0.8) 70%, transparent 100%);
+}
+#category-badge {
+  text-align: center; margin-bottom: 4px;
+}
+#category-badge span {
+  display: inline-block; padding: 3px 16px;
+  background: rgba(60,60,130,0.7); color: #99bbdd;
+  border-radius: 12px; font-size: 12px; font-weight: 600; letter-spacing: 1px;
+}
+#question-text {
+  text-align: center; font-size: 22px; font-weight: 800;
+  color: #ffffff; margin-bottom: 12px; padding: 8px 8px;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  line-height: 1.4;
+}
+#answers-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px; max-width: 600px; margin: 0 auto;
+}
+.answer-btn {
+  position: relative; cursor: pointer;
+  padding: 14px 16px; border: none; border-radius: 12px;
+  font-size: 18px; font-weight: 700; color: #fff;
+  text-align: center; transition: all 0.15s;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  pointer-events: all;
+  -webkit-user-select: none; user-select: none;
+}
+.answer-btn:active { transform: scale(0.95); }
+.answer-btn .label-letter {
+  position: absolute; top: 6px; left: 10px;
+  font-size: 13px; font-weight: 600; opacity: 0.5;
+}
+#btn-a { background: linear-gradient(135deg, #cc2244, #dd3355); }
+#btn-b { background: linear-gradient(135deg, #2244cc, #3355dd); }
+#btn-c { background: linear-gradient(135deg, #22aa44, #33bb55); }
+#btn-d { background: linear-gradient(135deg, #cc8822, #ddaa33); }
+#btn-a:hover { background: linear-gradient(135deg, #ee3366, #ff4477); }
+#btn-b:hover { background: linear-gradient(135deg, #3366ee, #4477ff); }
+#btn-c:hover { background: linear-gradient(135deg, #33cc55, #44dd66); }
+#btn-d:hover { background: linear-gradient(135deg, #eeaa33, #ffbb44); }
+.answer-btn.correct { background: linear-gradient(135deg, #00cc55, #22ee77) !important; box-shadow: 0 0 20px rgba(0,220,80,0.5); }
+.answer-btn.wrong { background: linear-gradient(135deg, #cc0022, #ee2244) !important; box-shadow: 0 0 20px rgba(220,0,40,0.5); }
+.answer-btn.disabled { pointer-events: none; opacity: 0.7; }
+
+/* ===== Title Screen ===== */
+#title-screen {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 20;
+  background: radial-gradient(ellipse at center, rgba(15,15,50,0.94) 0%, rgba(5,5,18,0.97) 100%);
+}
+#title-screen h1 {
+  font-size: 68px; font-weight: 900;
+  background: linear-gradient(135deg, #ff6699 30%, #66ccff 70%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  margin-bottom: 6px; animation: titlePulse 2.5s ease-in-out infinite;
+}
+@keyframes titlePulse {
+  0%,100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+#title-screen .subtitle {
+  font-size: 18px; color: #99aabb; margin-bottom: 36px;
+}
+#title-screen .news-blurb {
+  font-size: 13px; color: #667799; max-width: 440px; text-align: center;
+  margin-bottom: 28px; line-height: 1.7;
+}
+.big-btn {
+  cursor: pointer; font-size: 22px; font-weight: 700;
+  padding: 14px 56px; color: #fff; border: none; border-radius: 50px;
+  transition: all 0.2s; pointer-events: all;
+}
+.big-btn:hover { transform: translateY(-2px); }
+.big-btn:active { transform: translateY(1px); }
+#start-btn {
+  background: linear-gradient(135deg, #ee3366, #ff6699);
+  box-shadow: 0 6px 28px rgba(255,60,110,0.4);
+}
+
+/* ===== Result Screen ===== */
+#result-screen {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  display: none; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 20;
+  background: radial-gradient(ellipse at center, rgba(15,15,50,0.94) 0%, rgba(5,5,18,0.97) 100%);
+}
+#result-screen h2 { font-size: 52px; font-weight: 900; margin-bottom: 10px; }
+#result-screen .result-detail { font-size: 22px; color: #99aabb; margin-bottom: 8px; }
+#result-screen .result-scores { font-size: 34px; margin-bottom: 28px; font-weight: 800; }
+#result-screen .result-scores .p { color: #ff6699; }
+#result-screen .result-scores .a { color: #66ccff; }
+#retry-btn {
+  background: linear-gradient(135deg, #3366ee, #66ccff);
+  box-shadow: 0 6px 28px rgba(60,110,255,0.4);
+}
+
+/* ===== Feedback ===== */
+#feedback {
+  position: fixed; top: 42%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 44px; font-weight: 900; z-index: 15;
+  pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  text-shadow: 0 3px 16px rgba(0,0,0,0.7);
+}
+#feedback.correct { color: #44ff88; }
+#feedback.wrong { color: #ff3344; }
+
+/* ===== AI status ===== */
+#ai-status {
+  position: fixed; z-index: 10; pointer-events: none;
+  top: 50%; right: 20px; transform: translateY(-50%);
+  text-align: center; display: none;
+}
+#ai-status .thinking {
+  color: #66ccff; font-size: 13px; font-weight: 600; letter-spacing: 1px;
+  animation: blink 1s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+#ai-status .result-icon {
+  font-size: 28px; display: none;
+}
+
+@media (max-width: 500px) {
+  #title-screen h1 { font-size: 44px; }
+  #title-screen .subtitle { font-size: 15px; }
+  #question-text { font-size: 18px; }
+  .answer-btn { font-size: 16px; padding: 12px 10px; }
+  #result-screen h2 { font-size: 36px; }
+  #scoreboard { min-width: 260px; gap: 12px; }
+  .score-value { font-size: 26px; }
+}
+@media (min-width: 800px) {
+  #question-text { font-size: 26px; }
+  .answer-btn { font-size: 20px; padding: 18px 20px; }
+  #answers-grid { max-width: 700px; gap: 14px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Title Screen -->
+<div id="title-screen">
+  <h1>AI vs 東大</h1>
+  <div class="subtitle">人間の知力でAIに勝てるか？</div>
+  <div class="news-blurb">
+    2025年、ChatGPTが東大・京大の入試で合格圏内のスコアを達成。<br>
+    あなたの知識でAIに挑戦しよう！
+  </div>
+  <button class="big-btn" id="start-btn">START</button>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="scoreboard">
+    <div class="score-side">
+      <div class="score-label">PLAYER</div>
+      <div class="score-value player-score" id="player-score">0</div>
+    </div>
+    <div class="score-divider">vs</div>
+    <div class="score-side">
+      <div class="score-label">AI</div>
+      <div class="score-value ai-score" id="ai-score">0</div>
+    </div>
+  </div>
+  <div id="round-info">問題 <span id="q-num">1</span> / 10</div>
+  <div id="timer-wrap">
+    <div id="timer-bar-bg"><div id="timer-bar"></div></div>
+    <div id="timer-text">10</div>
+  </div>
+</div>
+
+<!-- Question + Answers overlay -->
+<div id="qa-panel">
+  <div id="category-badge"><span id="cat-label">一般</span></div>
+  <div id="question-text">問題がここに表示されます</div>
+  <div id="answers-grid">
+    <button class="answer-btn" id="btn-a" data-idx="0"><span class="label-letter">A</span><span class="answer-text"></span></button>
+    <button class="answer-btn" id="btn-b" data-idx="1"><span class="label-letter">B</span><span class="answer-text"></span></button>
+    <button class="answer-btn" id="btn-c" data-idx="2"><span class="label-letter">C</span><span class="answer-text"></span></button>
+    <button class="answer-btn" id="btn-d" data-idx="3"><span class="label-letter">D</span><span class="answer-text"></span></button>
+  </div>
+</div>
+
+<!-- AI thinking status -->
+<div id="ai-status">
+  <div class="thinking" id="ai-thinking">AI<br>思考中...</div>
+  <div class="result-icon" id="ai-result-icon"></div>
+</div>
+
+<!-- Result Screen -->
+<div id="result-screen">
+  <h2 id="result-title"></h2>
+  <div class="result-detail" id="result-detail"></div>
+  <div class="result-scores">
+    <span class="p" id="final-player">0</span>
+    &nbsp;vs&nbsp;
+    <span class="a" id="final-ai">0</span>
+  </div>
+  <button class="big-btn" id="retry-btn">もう一度挑戦</button>
+</div>
+
+<!-- Feedback -->
+<div id="feedback"></div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ==================== QUESTIONS (35) ====================
+const allQuestions = [
+  { q: "日本の首都は？", choices: ["大阪","東京","京都","名古屋"], answer: 1, cat: "一般" },
+  { q: "1 + 1 × 2 = ?", choices: ["4","3","2","6"], answer: 1, cat: "数学" },
+  { q: "地球から一番近い恒星は？", choices: ["北極星","シリウス","太陽","プロキシマ"], answer: 2, cat: "科学" },
+  { q: "水の化学式は？", choices: ["CO2","H2O","NaCl","O2"], answer: 1, cat: "科学" },
+  { q: "日本で一番高い山は？", choices: ["北岳","槍ヶ岳","富士山","阿蘇山"], answer: 2, cat: "一般" },
+  { q: "「吾輩は猫である」の著者は？", choices: ["太宰治","川端康成","夏目漱石","芥川龍之介"], answer: 2, cat: "国語" },
+  { q: "光の三原色でないのは？", choices: ["赤","緑","黄","青"], answer: 2, cat: "科学" },
+  { q: "1年は何日？（平年）", choices: ["364","365","366","360"], answer: 1, cat: "一般" },
+  { q: "日本の国花は？", choices: ["桜","菊","梅","藤"], answer: 0, cat: "一般" },
+  { q: "π（パイ）の小数第1位は？", choices: ["1","4","5","2"], answer: 0, cat: "数学" },
+  { q: "酸素の元素記号は？", choices: ["Ox","O","Os","Og"], answer: 1, cat: "科学" },
+  { q: "「枕草子」を書いたのは？", choices: ["紫式部","清少納言","和泉式部","小野小町"], answer: 1, cat: "国語" },
+  { q: "地球の衛星は？", choices: ["火星","太陽","月","金星"], answer: 2, cat: "科学" },
+  { q: "2の10乗は？", choices: ["512","1024","2048","256"], answer: 1, cat: "数学" },
+  { q: "日本の通貨単位は？", choices: ["ウォン","元","円","ドル"], answer: 2, cat: "一般" },
+  { q: "人間の体で一番大きい臓器は？", choices: ["心臓","肝臓","肺","皮膚"], answer: 3, cat: "科学" },
+  { q: "「I have a dream」の演説者は？", choices: ["リンカーン","キング牧師","ケネディ","オバマ"], answer: 1, cat: "一般" },
+  { q: "三角形の内角の和は？", choices: ["360°","180°","270°","90°"], answer: 1, cat: "数学" },
+  { q: "太陽系で一番大きい惑星は？", choices: ["土星","地球","木星","天王星"], answer: 2, cat: "科学" },
+  { q: "日本の都道府県の数は？", choices: ["43","47","50","45"], answer: 1, cat: "一般" },
+  { q: "「走れメロス」の著者は？", choices: ["宮沢賢治","太宰治","三島由紀夫","芥川龍之介"], answer: 1, cat: "国語" },
+  { q: "絶対零度は何℃？", choices: ["-273℃","-100℃","0℃","-300℃"], answer: 0, cat: "科学" },
+  { q: "√144 = ?", choices: ["14","11","12","13"], answer: 2, cat: "数学" },
+  { q: "世界で一番人口が多い国は？", choices: ["アメリカ","中国","インド","ロシア"], answer: 2, cat: "一般" },
+  { q: "DNAの正式名称に含まれるのは？", choices: ["リボ核酸","デオキシリボ核酸","アミノ酸","クエン酸"], answer: 1, cat: "科学" },
+  { q: "6! (6の階乗) = ?", choices: ["120","720","360","620"], answer: 1, cat: "数学" },
+  { q: "「源氏物語」の著者は？", choices: ["清少納言","紫式部","藤原道長","在原業平"], answer: 1, cat: "国語" },
+  { q: "1ダースは何個？", choices: ["10","6","12","24"], answer: 2, cat: "一般" },
+  { q: "ダイヤモンドの主成分は？", choices: ["鉄","炭素","ケイ素","金"], answer: 1, cat: "科学" },
+  { q: "東京タワーの高さは？", choices: ["333m","300m","634m","250m"], answer: 0, cat: "一般" },
+  { q: "cos(0°) = ?", choices: ["0","1","-1","0.5"], answer: 1, cat: "数学" },
+  { q: "日本最長の川は？", choices: ["利根川","信濃川","石狩川","北上川"], answer: 1, cat: "一般" },
+  { q: "英語で「猫」は？", choices: ["dog","cat","rat","bat"], answer: 1, cat: "英語" },
+  { q: "ニュートンが発見した法則は？", choices: ["相対性理論","万有引力","量子力学","電磁気学"], answer: 1, cat: "科学" },
+  { q: "素数でないものは？", choices: ["2","7","9","11"], answer: 2, cat: "数学" },
+];
+
+// ==================== STATE ====================
+let gameState = 'title';
+let playerScore = 0, aiScore = 0;
+let currentRound = 0;
+let roundQuestions = [];
+let timerStart = 0;
+const TIMER_DURATION = 10;
+let answered = false;
+let aiAnswered = false;
+let aiTimerHandle = 0;
+
+// ==================== DOM refs ====================
+const $hud = document.getElementById('hud');
+const $qaPanel = document.getElementById('qa-panel');
+const $titleScreen = document.getElementById('title-screen');
+const $resultScreen = document.getElementById('result-screen');
+const $playerScore = document.getElementById('player-score');
+const $aiScore = document.getElementById('ai-score');
+const $qNum = document.getElementById('q-num');
+const $timerBar = document.getElementById('timer-bar');
+const $timerText = document.getElementById('timer-text');
+const $catLabel = document.getElementById('cat-label');
+const $questionText = document.getElementById('question-text');
+const $feedback = document.getElementById('feedback');
+const $aiStatus = document.getElementById('ai-status');
+const $aiThinking = document.getElementById('ai-thinking');
+const $aiResultIcon = document.getElementById('ai-result-icon');
+const answerBtns = [
+  document.getElementById('btn-a'),
+  document.getElementById('btn-b'),
+  document.getElementById('btn-c'),
+  document.getElementById('btn-d'),
+];
+
+// ==================== THREE.JS ====================
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x080818);
+scene.fog = new THREE.FogExp2(0x080818, 0.018);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 5.5, 14);
+camera.lookAt(0, 2.5, 0);
+
+// ==================== LIGHTING ====================
+scene.add(new THREE.AmbientLight(0x334466, 1.0));
+
+const spotCenter = new THREE.SpotLight(0xffeedd, 50, 50, Math.PI / 4, 0.4, 0.8);
+spotCenter.position.set(0, 15, 5);
+spotCenter.target.position.set(0, 1, 0);
+spotCenter.castShadow = true;
+spotCenter.shadow.mapSize.set(1024, 1024);
+scene.add(spotCenter); scene.add(spotCenter.target);
+
+const spotPlayer = new THREE.SpotLight(0xff6699, 25, 30, Math.PI / 5, 0.5, 0.8);
+spotPlayer.position.set(-6, 13, 4);
+spotPlayer.target.position.set(-4.5, 1, 0);
+scene.add(spotPlayer); scene.add(spotPlayer.target);
+
+const spotAI = new THREE.SpotLight(0x66ccff, 25, 30, Math.PI / 5, 0.5, 0.8);
+spotAI.position.set(6, 13, 4);
+spotAI.target.position.set(4.5, 1, 0);
+scene.add(spotAI); scene.add(spotAI.target);
+
+const fillFront = new THREE.PointLight(0x556688, 5, 40);
+fillFront.position.set(0, 6, 10);
+scene.add(fillFront);
+
+// ==================== ENVIRONMENT ====================
+// Floor
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(20, 64),
+  new THREE.MeshStandardMaterial({ color: 0x181830, roughness: 0.3, metalness: 0.5 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Stage
+const stageMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(3.2, 3.6, 0.5, 32),
+  new THREE.MeshStandardMaterial({ color: 0x222244, roughness: 0.4, metalness: 0.6 })
+);
+stageMesh.position.set(0, 0.25, 0);
+stageMesh.receiveShadow = true; stageMesh.castShadow = true;
+scene.add(stageMesh);
+
+// Stage glow ring
+const ringMat = new THREE.MeshBasicMaterial({ color: 0x4466ff });
+const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.05, 8, 64), ringMat);
+ringMesh.rotation.x = -Math.PI / 2;
+ringMesh.position.y = 0.52;
+scene.add(ringMesh);
+
+// Podium
+const podium = new THREE.Mesh(
+  new THREE.BoxGeometry(1.4, 2.2, 0.7),
+  new THREE.MeshStandardMaterial({ color: 0x282848, roughness: 0.3, metalness: 0.7 })
+);
+podium.position.set(0, 1.35, 0);
+podium.castShadow = true;
+scene.add(podium);
+
+// VS text on podium
+const vsSprite = makeSprite("VS", "#6688aa", 64, 128, 128);
+vsSprite.position.set(0, 2.7, 0.4);
+vsSprite.scale.set(1.2, 1.2, 1);
+scene.add(vsSprite);
+
+// Back wall
+scene.add(new THREE.Mesh(
+  new THREE.BoxGeometry(30, 14, 0.5),
+  new THREE.MeshStandardMaterial({ color: 0x121228, roughness: 0.8 })
+).translateZ(-7.5).translateY(7));
+
+// Bookshelves
+function makeBookshelf(x, y) {
+  const g = new THREE.Group();
+  const sm = new THREE.MeshStandardMaterial({ color: 0x3d2b1f, roughness: 0.7 });
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(2.8, 4.5, 0.3), sm));
+  for (let sy = -1.4; sy <= 1.4; sy += 0.93) {
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.07, 0.32), sm).translateY(sy).translateZ(0.04));
+  }
+  const bc = [0xcc3333,0x3333cc,0x33aa33,0xccaa33,0x993399,0xcc6633,0x339999];
+  for (let row = -1.4; row <= 0.9; row += 0.93) {
+    for (let bx = -1; bx <= 1; bx += 0.21) {
+      const h = 0.4 + Math.random() * 0.35;
+      const bk = new THREE.Mesh(
+        new THREE.BoxGeometry(0.16, h, 0.18),
+        new THREE.MeshStandardMaterial({ color: bc[Math.floor(Math.random()*bc.length)], roughness: 0.6 })
+      );
+      bk.position.set(bx, row + 0.47 + h/2 - 0.38, 0.08);
+      g.add(bk);
+    }
+  }
+  g.position.set(x, y, -7);
+  return g;
+}
+scene.add(makeBookshelf(-8, 5.5));
+scene.add(makeBookshelf(-5, 5.5));
+scene.add(makeBookshelf(5, 5.5));
+scene.add(makeBookshelf(8, 5.5));
+
+// Side walls
+for (const sx of [-14, 14]) {
+  scene.add(new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 14, 20),
+    new THREE.MeshStandardMaterial({ color: 0x0e0e22, roughness: 0.9 })
+  ).translateX(sx).translateY(7).translateZ(-2));
+}
+// Ceiling
+scene.add(new THREE.Mesh(
+  new THREE.BoxGeometry(30, 0.5, 24),
+  new THREE.MeshStandardMaterial({ color: 0x0b0b1c, roughness: 0.9 })
+).translateY(14).translateZ(-2));
+
+// ==================== PLAYER (Brain) ====================
+const brainGroup = new THREE.Group();
+brainGroup.position.set(-4.5, 2.5, 1);
+
+const brainCore = new THREE.Mesh(
+  new THREE.SphereGeometry(1.1, 32, 32),
+  new THREE.MeshStandardMaterial({ color: 0xff8899, roughness: 0.45, metalness: 0.1 })
+);
+brainGroup.add(brainCore);
+
+const wrinkleMat = new THREE.MeshStandardMaterial({ color: 0xee7788, roughness: 0.4 });
+for (let i = 0; i < 8; i++) {
+  const w = new THREE.Mesh(new THREE.TorusGeometry(0.6 + Math.random()*0.4, 0.07, 8, 20), wrinkleMat);
+  w.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+  brainGroup.add(w);
+}
+brainGroup.add(new THREE.Mesh(
+  new THREE.CylinderGeometry(0.18, 0.28, 0.7, 12),
+  new THREE.MeshStandardMaterial({ color: 0xdd7788, roughness: 0.5 })
+).translateY(-1.2));
+brainGroup.castShadow = true;
+scene.add(brainGroup);
+
+scene.add(new THREE.Mesh(
+  new THREE.CylinderGeometry(0.9, 1.1, 1, 16),
+  new THREE.MeshStandardMaterial({ color: 0x2a1128, roughness: 0.3, metalness: 0.6 })
+).translateX(-4.5).translateY(0.5).translateZ(1));
+
+const plLabel = makeSprite("PLAYER", "#ff6699", 36, 256, 64);
+plLabel.position.set(-4.5, 4.5, 1); plLabel.scale.set(2.2, 0.6, 1);
+scene.add(plLabel);
+
+// ==================== AI (Robot) ====================
+const robotGroup = new THREE.Group();
+robotGroup.position.set(4.5, 2.5, 1);
+
+const metalM = new THREE.MeshStandardMaterial({ color: 0x88aacc, roughness: 0.2, metalness: 0.9 });
+const darkM = new THREE.MeshStandardMaterial({ color: 0x556688, roughness: 0.3, metalness: 0.8 });
+
+const robotHead = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.1, 1.1), metalM);
+robotHead.position.y = 0.55; robotGroup.add(robotHead);
+
+const eyeMatL = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 2 });
+const eyeMatR = eyeMatL.clone();
+const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), eyeMatL);
+leftEye.position.set(-0.32, 0.7, 0.58); robotGroup.add(leftEye);
+const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), eyeMatR);
+rightEye.position.set(0.32, 0.7, 0.58); robotGroup.add(rightEye);
+
+robotGroup.add(new THREE.Mesh(
+  new THREE.BoxGeometry(0.6, 0.07, 0.04),
+  new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 1 })
+).translateY(0.3).translateZ(0.58));
+
+const robotBody = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 0.9), darkM);
+robotBody.position.y = -0.55; robotGroup.add(robotBody);
+
+robotGroup.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), metalM).translateY(1.35));
+const antennaBallMat = new THREE.MeshStandardMaterial({ color: 0xff3333, emissive: 0xff3333, emissiveIntensity: 2 });
+const antennaBall = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), antennaBallMat);
+antennaBall.position.set(0, 1.6, 0); robotGroup.add(antennaBall);
+
+for (const side of [-1, 1]) {
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.09, 1.1, 8), metalM);
+  arm.position.set(side * 1, -0.45, 0); arm.rotation.z = side * 0.2;
+  robotGroup.add(arm);
+}
+robotGroup.castShadow = true;
+scene.add(robotGroup);
+
+scene.add(new THREE.Mesh(
+  new THREE.CylinderGeometry(0.9, 1.1, 1, 16),
+  new THREE.MeshStandardMaterial({ color: 0x0e1c2a, roughness: 0.3, metalness: 0.6 })
+).translateX(4.5).translateY(0.5).translateZ(1));
+
+const aiLabel = makeSprite("AI", "#66ccff", 48, 128, 64);
+aiLabel.position.set(4.5, 4.5, 1); aiLabel.scale.set(1.6, 0.6, 1);
+scene.add(aiLabel);
+
+// ==================== SCOREBOARD (3D floating) ====================
+// Large 3D scoreboard above stage
+const sbGroup = new THREE.Group();
+sbGroup.position.set(0, 8.5, -5);
+
+const sbBg = new THREE.Mesh(
+  new THREE.BoxGeometry(8, 2.5, 0.2),
+  new THREE.MeshStandardMaterial({ color: 0x151530, roughness: 0.3, metalness: 0.7 })
+);
+sbGroup.add(sbBg);
+
+// Glow frame
+const frameMat = new THREE.MeshBasicMaterial({ color: 0x3355aa });
+const frameTop = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.06, 0.06), frameMat);
+frameTop.position.y = 1.25; sbGroup.add(frameTop);
+const frameBot = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.06, 0.06), frameMat);
+frameBot.position.y = -1.25; sbGroup.add(frameBot);
+const frameLeft = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.5, 0.06), frameMat);
+frameLeft.position.x = -4.1; sbGroup.add(frameLeft);
+const frameRight = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.5, 0.06), frameMat);
+frameRight.position.x = 4.1; sbGroup.add(frameRight);
+
+scene.add(sbGroup);
+
+// ==================== PARTICLE SYSTEM ====================
+const PC = 300;
+const pGeo = new THREE.BufferGeometry();
+const pPos = new Float32Array(PC * 3);
+const pCol = new Float32Array(PC * 3);
+const pVel = [];
+for (let i = 0; i < PC; i++) {
+  pPos[i*3]=0; pPos[i*3+1]=-100; pPos[i*3+2]=0;
+  pCol[i*3]=1; pCol[i*3+1]=1; pCol[i*3+2]=1;
+  pVel.push(new THREE.Vector3());
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+const pMat = new THREE.PointsMaterial({ size: 0.18, vertexColors: true, transparent: true, opacity: 0.9 });
+scene.add(new THREE.Points(pGeo, pMat));
+let particlesActive = false, particleLife = 0;
+
+function emitParticles(origin, color) {
+  const pos = pGeo.attributes.position.array;
+  const col = pGeo.attributes.color.array;
+  for (let i = 0; i < PC; i++) {
+    pos[i*3]   = origin.x + (Math.random()-0.5)*1.5;
+    pos[i*3+1] = origin.y + (Math.random()-0.5)*1.5;
+    pos[i*3+2] = origin.z + (Math.random()-0.5)*1.5;
+    col[i*3]   = color.r*(0.6+Math.random()*0.4);
+    col[i*3+1] = color.g*(0.6+Math.random()*0.4);
+    col[i*3+2] = color.b*(0.6+Math.random()*0.4);
+    pVel[i].set((Math.random()-0.5)*0.4, Math.random()*0.3+0.05, (Math.random()-0.5)*0.4);
+  }
+  pGeo.attributes.position.needsUpdate = true;
+  pGeo.attributes.color.needsUpdate = true;
+  particlesActive = true; particleLife = 2.5;
+}
+function updateParticles(dt) {
+  if (!particlesActive) return;
+  particleLife -= dt;
+  const pos = pGeo.attributes.position.array;
+  if (particleLife <= 0) {
+    particlesActive = false;
+    for (let i = 0; i < PC; i++) pos[i*3+1] = -100;
+    pGeo.attributes.position.needsUpdate = true; return;
+  }
+  for (let i = 0; i < PC; i++) {
+    pos[i*3]   += pVel[i].x;
+    pos[i*3+1] += pVel[i].y;
+    pos[i*3+2] += pVel[i].z;
+    pVel[i].y -= 0.006;
+  }
+  pMat.opacity = Math.min(1, particleLife*0.7);
+  pGeo.attributes.position.needsUpdate = true;
+}
+
+// ==================== HELPERS ====================
+function makeSprite(text, color, fontSize, cw, ch) {
+  const c = document.createElement('canvas');
+  c.width = cw || 256; c.height = ch || 64;
+  const x = c.getContext('2d');
+  x.font = `bold ${fontSize || 36}px "Helvetica Neue","Hiragino Kaku Gothic ProN",sans-serif`;
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillStyle = color || '#fff';
+  x.fillText(text, c.width/2, c.height/2);
+  const t = new THREE.CanvasTexture(c); t.minFilter = THREE.LinearFilter;
+  return new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true }));
+}
+
+function shuffleArray(a) {
+  const r = [...a];
+  for (let i = r.length-1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [r[i],r[j]]=[r[j],r[i]]; }
+  return r;
+}
+
+// ==================== GAME LOGIC ====================
+function startGame() {
+  gameState = 'playing';
+  playerScore = 0; aiScore = 0; currentRound = 0;
+  roundQuestions = shuffleArray(allQuestions).slice(0, 10);
+  $titleScreen.style.display = 'none';
+  $resultScreen.style.display = 'none';
+  $hud.style.display = 'block';
+  $qaPanel.style.display = 'block';
+  $aiStatus.style.display = 'block';
+  updateScoreboard();
+  showQuestion();
+}
+
+function showQuestion() {
+  answered = false; aiAnswered = false;
+  const q = roundQuestions[currentRound];
+
+  $qNum.textContent = currentRound + 1;
+  $timerBar.style.width = '100%';
+  $timerText.textContent = TIMER_DURATION;
+  $catLabel.textContent = q.cat;
+  $questionText.textContent = q.q;
+
+  // Set answer buttons
+  const texts = document.querySelectorAll('.answer-text');
+  q.choices.forEach((ch, i) => {
+    texts[i].textContent = ch;
+    answerBtns[i].className = 'answer-btn';
+    answerBtns[i].id = ['btn-a','btn-b','btn-c','btn-d'][i];
+  });
+
+  // AI status
+  $aiThinking.style.display = 'block';
+  $aiResultIcon.style.display = 'none';
+
+  timerStart = performance.now();
+
+  // AI answer
+  const aiDelay = 1500 + Math.random() * 4500;
+  const aiCorrect = Math.random() < 0.8;
+  clearTimeout(aiTimerHandle);
+  aiTimerHandle = setTimeout(() => {
+    if (gameState !== 'playing' || aiAnswered) return;
+    aiAnswered = true;
+    $aiThinking.style.display = 'none';
+    $aiResultIcon.style.display = 'block';
+    if (aiCorrect) {
+      aiScore += 100;
+      $aiResultIcon.textContent = '✓';
+      $aiResultIcon.style.color = '#44ff88';
+      emitParticles(new THREE.Vector3(4.5, 3.5, 1), new THREE.Color(0.4, 0.8, 1));
+      flashRobotEyes(true);
+    } else {
+      $aiResultIcon.textContent = '✗';
+      $aiResultIcon.style.color = '#ff4444';
+      flashRobotEyes(false);
+    }
+    updateScoreboard();
+  }, aiDelay);
+}
+
+function flashRobotEyes(ok) {
+  const c = ok ? 0x00ff00 : 0xff0000;
+  eyeMatL.color.setHex(c); eyeMatL.emissive.setHex(c);
+  eyeMatR.color.setHex(c); eyeMatR.emissive.setHex(c);
+  setTimeout(() => {
+    eyeMatL.color.setHex(0x00ffff); eyeMatL.emissive.setHex(0x00ffff);
+    eyeMatR.color.setHex(0x00ffff); eyeMatR.emissive.setHex(0x00ffff);
+  }, 600);
+}
+
+function handleAnswer(idx) {
+  if (answered || gameState !== 'playing') return;
+  answered = true;
+  const q = roundQuestions[currentRound];
+  const correct = idx === q.answer;
+
+  // Disable all buttons
+  answerBtns.forEach(b => b.classList.add('disabled'));
+
+  // Highlight correct
+  answerBtns[q.answer].classList.add('correct');
+
+  if (correct) {
+    const elapsed = (performance.now() - timerStart) / 1000;
+    const bonus = Math.max(0, Math.floor((TIMER_DURATION - elapsed) * 5));
+    playerScore += 100 + bonus;
+    emitParticles(new THREE.Vector3(-4.5, 3.5, 1), new THREE.Color(1, 0.4, 0.6));
+    showFeedback("正解！ +" + (100 + bonus), true);
+  } else {
+    answerBtns[idx].classList.add('wrong');
+    showFeedback("不正解...", false);
+  }
+  updateScoreboard();
+  scheduleNext();
+}
+
+function handleTimeout() {
+  if (answered) return;
+  answered = true;
+  answerBtns.forEach(b => b.classList.add('disabled'));
+  const q = roundQuestions[currentRound];
+  answerBtns[q.answer].classList.add('correct');
+  showFeedback("時間切れ！", false);
+  scheduleNext();
+}
+
+function scheduleNext() {
+  setTimeout(() => {
+    currentRound++;
+    if (currentRound >= 10) endGame(); else showQuestion();
+  }, 2000);
+}
+
+function showFeedback(text, ok) {
+  $feedback.textContent = text;
+  $feedback.className = ok ? 'correct' : 'wrong';
+  $feedback.style.opacity = 1;
+  setTimeout(() => $feedback.style.opacity = 0, 1400);
+}
+
+function updateScoreboard() {
+  $playerScore.textContent = playerScore;
+  $aiScore.textContent = aiScore;
+}
+
+function endGame() {
+  gameState = 'result';
+  clearTimeout(aiTimerHandle);
+  $hud.style.display = 'none';
+  $qaPanel.style.display = 'none';
+  $aiStatus.style.display = 'none';
+  $resultScreen.style.display = 'flex';
+
+  const t = document.getElementById('result-title');
+  const d = document.getElementById('result-detail');
+
+  if (playerScore > aiScore) {
+    t.textContent = "人間の勝利！";
+    t.style.color = '#ff6699'; t.style.textShadow = '0 0 30px rgba(255,100,150,0.5)';
+    d.textContent = "東大レベルの知力を証明した！";
+    emitParticles(new THREE.Vector3(0, 4, 3), new THREE.Color(1, 0.4, 0.6));
+    setTimeout(() => emitParticles(new THREE.Vector3(-2, 5, 2), new THREE.Color(1, 0.8, 0.3)), 500);
+    setTimeout(() => emitParticles(new THREE.Vector3(2, 5, 2), new THREE.Color(0.3, 1, 0.5)), 1000);
+  } else if (aiScore > playerScore) {
+    t.textContent = "AIの勝利！";
+    t.style.color = '#66ccff'; t.style.textShadow = '0 0 30px rgba(100,200,255,0.5)';
+    d.textContent = "AIはやっぱり強かった...";
+    emitParticles(new THREE.Vector3(0, 4, 3), new THREE.Color(0.4, 0.7, 1));
+  } else {
+    t.textContent = "引き分け！";
+    t.style.color = '#ffcc33'; t.style.textShadow = '0 0 30px rgba(255,200,50,0.5)';
+    d.textContent = "人間とAIは互角の勝負！";
+    emitParticles(new THREE.Vector3(0, 4, 3), new THREE.Color(1, 0.8, 0.2));
+  }
+  document.getElementById('final-player').textContent = playerScore;
+  document.getElementById('final-ai').textContent = aiScore;
+}
+
+// ==================== EVENT LISTENERS ====================
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('retry-btn').addEventListener('click', startGame);
+answerBtns.forEach((btn, i) => {
+  btn.addEventListener('click', () => handleAnswer(i));
+});
+
+// ==================== RESIZE ====================
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ==================== ANIMATION LOOP ====================
+const clock = new THREE.Clock();
+let elapsed = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  elapsed += dt;
+
+  // Brain hover + rotate
+  brainGroup.position.y = 2.5 + Math.sin(elapsed * 1.5) * 0.2;
+  brainGroup.rotation.y = elapsed * 0.3;
+
+  // Robot hover
+  robotGroup.position.y = 2.5 + Math.sin(elapsed * 1.8 + 1) * 0.12;
+
+  // Antenna blink
+  antennaBallMat.emissiveIntensity = 1.5 + Math.sin(elapsed * 5) * 1.5;
+
+  // Stage ring color cycle
+  ringMat.color.setHSL((elapsed * 0.05) % 1, 0.6, 0.45);
+
+  // Timer
+  if (gameState === 'playing' && !answered) {
+    const te = (performance.now() - timerStart) / 1000;
+    const rem = Math.max(0, TIMER_DURATION - te);
+    $timerBar.style.width = (rem / TIMER_DURATION * 100) + '%';
+    $timerText.textContent = Math.ceil(rem);
+    if (rem <= 3) $timerText.style.color = '#ff4444';
+    else $timerText.style.color = '#eebb33';
+    if (rem <= 0) handleTimeout();
+  }
+
+  // Particles
+  updateParticles(dt);
+
+  // Gentle camera sway
+  camera.position.x = Math.sin(elapsed * 0.12) * 0.3;
+  camera.position.y = 5.5 + Math.sin(elapsed * 0.18) * 0.15;
+  camera.lookAt(0, 2.5, 0);
+
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>
