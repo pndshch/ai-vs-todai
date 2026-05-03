@@ -264,6 +264,8 @@ canvas { display: block; position: fixed; top: 0; left: 0; z-index: 0; }
 </script>
 <script type="module">
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 // ==================== QUESTIONS (35) ====================
 const allQuestions = [
@@ -356,6 +358,49 @@ const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerH
 camera.position.set(0, 5.5, 14);
 camera.lookAt(0, 2.5, 0);
 
+// ==================== BLENDER MODEL LOADING ====================
+const blenderModels = {};
+let blenderLoaded = false;
+
+function loadBlenderModels() {
+  return new Promise((resolve) => {
+    const loader = new GLTFLoader();
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/libs/draco/');
+    loader.setDRACOLoader(dracoLoader);
+
+    loader.load('./scene.glb', (gltf) => {
+      gltf.scene.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      gltf.scene.children.forEach(child => {
+        blenderModels[child.name] = child;
+      });
+      blenderLoaded = true;
+      console.log('Blender models loaded:', Object.keys(blenderModels));
+      resolve();
+    }, undefined, (err) => {
+      console.warn('Blender GLB failed to load, using procedural:', err);
+      resolve();
+    });
+  });
+}
+
+function cloneBlenderModel(name) {
+  const src = blenderModels[name];
+  if (!src) return null;
+  const clone = src.clone(true);
+  clone.traverse((child) => {
+    if (child.isMesh && child.material) {
+      child.material = child.material.clone();
+    }
+  });
+  return clone;
+}
+
 // ==================== LIGHTING ====================
 scene.add(new THREE.AmbientLight(0x334466, 1.0));
 
@@ -380,196 +425,291 @@ const fillFront = new THREE.PointLight(0x556688, 5, 40);
 fillFront.position.set(0, 6, 10);
 scene.add(fillFront);
 
-// ==================== ENVIRONMENT ====================
-// Floor
-const floor = new THREE.Mesh(
-  new THREE.CircleGeometry(20, 64),
-  new THREE.MeshStandardMaterial({ color: 0x181830, roughness: 0.3, metalness: 0.5 })
-);
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
+// ==================== ENVIRONMENT & CHARACTERS ====================
+let brainGroup, robotGroup, eyeMatL, eyeMatR, antennaBallMat, ringMat;
 
-// Stage
-const stageMesh = new THREE.Mesh(
-  new THREE.CylinderGeometry(3.2, 3.6, 0.5, 32),
-  new THREE.MeshStandardMaterial({ color: 0x222244, roughness: 0.4, metalness: 0.6 })
-);
-stageMesh.position.set(0, 0.25, 0);
-stageMesh.receiveShadow = true; stageMesh.castShadow = true;
-scene.add(stageMesh);
+function buildScene() {
+  // Stage glow ring (always procedural for animation)
+  ringMat = new THREE.MeshBasicMaterial({ color: 0x4466ff });
+  const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.05, 8, 64), ringMat);
+  ringMesh.rotation.x = -Math.PI / 2;
+  ringMesh.position.y = 0.52;
+  scene.add(ringMesh);
 
-// Stage glow ring
-const ringMat = new THREE.MeshBasicMaterial({ color: 0x4466ff });
-const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.05, 8, 64), ringMat);
-ringMesh.rotation.x = -Math.PI / 2;
-ringMesh.position.y = 0.52;
-scene.add(ringMesh);
+  if (blenderLoaded) {
+    // --- Blender environment ---
+    const floorModel = cloneBlenderModel('Floor');
+    if (floorModel) {
+      floorModel.rotation.x = -Math.PI / 2;
+      floorModel.position.set(0, -0.15, 0);
+      floorModel.scale.set(0.7, 0.7, 0.7);
+      floorModel.receiveShadow = true;
+      scene.add(floorModel);
+    }
 
-// Podium
-const podium = new THREE.Mesh(
-  new THREE.BoxGeometry(1.4, 2.2, 0.7),
-  new THREE.MeshStandardMaterial({ color: 0x282848, roughness: 0.3, metalness: 0.7 })
-);
-podium.position.set(0, 1.35, 0);
-podium.castShadow = true;
-scene.add(podium);
+    const stageModel = cloneBlenderModel('Stage');
+    if (stageModel) {
+      stageModel.rotation.x = -Math.PI / 2;
+      stageModel.position.set(0, 0.25, 0);
+      stageModel.scale.set(1.0, 1.0, 1.0);
+      scene.add(stageModel);
+    }
 
-// VS text on podium
-const vsSprite = makeSprite("VS", "#6688aa", 64, 128, 128);
-vsSprite.position.set(0, 2.7, 0.4);
-vsSprite.scale.set(1.2, 1.2, 1);
-scene.add(vsSprite);
+    const podiumModel = cloneBlenderModel('Podium');
+    if (podiumModel) {
+      podiumModel.rotation.x = -Math.PI / 2;
+      podiumModel.position.set(0, 1.35, 0);
+      podiumModel.scale.set(0.7, 0.7, 0.7);
+      scene.add(podiumModel);
+    }
 
-// Back wall
-scene.add(new THREE.Mesh(
-  new THREE.BoxGeometry(30, 14, 0.5),
-  new THREE.MeshStandardMaterial({ color: 0x121228, roughness: 0.8 })
-).translateZ(-7.5).translateY(7));
+    // Pedestals
+    const pedL = cloneBlenderModel('PedestalLeft');
+    if (pedL) {
+      pedL.rotation.x = -Math.PI / 2;
+      pedL.position.set(-4.5, 0.5, 1);
+      pedL.scale.set(0.9, 0.9, 0.9);
+      scene.add(pedL);
+    }
+    const pedR = cloneBlenderModel('PedestalRight');
+    if (pedR) {
+      pedR.rotation.x = -Math.PI / 2;
+      pedR.position.set(4.5, 0.5, 1);
+      pedR.scale.set(0.9, 0.9, 0.9);
+      scene.add(pedR);
+    }
 
-// Bookshelves
-function makeBookshelf(x, y) {
-  const g = new THREE.Group();
-  const sm = new THREE.MeshStandardMaterial({ color: 0x3d2b1f, roughness: 0.7 });
-  g.add(new THREE.Mesh(new THREE.BoxGeometry(2.8, 4.5, 0.3), sm));
-  for (let sy = -1.4; sy <= 1.4; sy += 0.93) {
-    g.add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.07, 0.32), sm).translateY(sy).translateZ(0.04));
+    // Bookshelves
+    for (const name of ['Bookshelf_L2', 'Bookshelf_L1', 'Bookshelf_R1', 'Bookshelf_R2']) {
+      const shelf = cloneBlenderModel(name);
+      if (shelf) {
+        shelf.rotation.x = -Math.PI / 2;
+        shelf.position.set(
+          name.includes('L2') ? -8 : name.includes('L1') ? -3 : name.includes('R1') ? 3 : 8,
+          5.5, -7
+        );
+        shelf.scale.set(0.85, 0.85, 0.85);
+        scene.add(shelf);
+      }
+    }
+
+    // Back wall, side walls, ceiling
+    const backWall = cloneBlenderModel('BackWall');
+    if (backWall) { backWall.rotation.x = -Math.PI/2; backWall.position.set(0, 7, -7.5); backWall.scale.set(0.75,0.75,0.75); scene.add(backWall); }
+    const wallL = cloneBlenderModel('WallLeft');
+    if (wallL) { wallL.rotation.x = -Math.PI/2; wallL.position.set(-14, 7, -2); wallL.scale.set(0.6,0.6,0.6); scene.add(wallL); }
+    const wallR = cloneBlenderModel('WallRight');
+    if (wallR) { wallR.rotation.x = -Math.PI/2; wallR.position.set(14, 7, -2); wallR.scale.set(0.6,0.6,0.6); scene.add(wallR); }
+    const ceiling = cloneBlenderModel('Ceiling');
+    if (ceiling) { ceiling.rotation.x = -Math.PI/2; ceiling.position.set(0, 14, -2); ceiling.scale.set(0.75,0.75,0.75); scene.add(ceiling); }
+
+    // Spotlights (decorative meshes)
+    for (const sn of ['SpotlightLeft', 'SpotlightRight', 'SpotlightCenter']) {
+      const sp = cloneBlenderModel(sn);
+      if (sp) {
+        sp.rotation.x = -Math.PI / 2;
+        const px = sn === 'SpotlightLeft' ? -5 : sn === 'SpotlightRight' ? 5 : 0;
+        sp.position.set(px, 12, 2);
+        sp.scale.set(1.2, 1.2, 1.2);
+        scene.add(sp);
+      }
+    }
+
+    // Scoreboard
+    const sb = cloneBlenderModel('Scoreboard');
+    if (sb) { sb.rotation.x = -Math.PI/2; sb.position.set(0, 8.5, -5); sb.scale.set(0.6,0.6,0.6); scene.add(sb); }
+    const sbFrame = cloneBlenderModel('ScoreboardFrame');
+    if (sbFrame) { sbFrame.rotation.x = -Math.PI/2; sbFrame.position.set(0, 8.5, -4.8); sbFrame.scale.set(0.6,0.6,0.6); scene.add(sbFrame); }
+
+  } else {
+    // --- Procedural fallback environment ---
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(20, 64),
+      new THREE.MeshStandardMaterial({ color: 0x181830, roughness: 0.3, metalness: 0.5 })
+    );
+    floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true;
+    scene.add(floor);
+
+    const stageMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.2, 3.6, 0.5, 32),
+      new THREE.MeshStandardMaterial({ color: 0x222244, roughness: 0.4, metalness: 0.6 })
+    );
+    stageMesh.position.set(0, 0.25, 0); stageMesh.receiveShadow = true; stageMesh.castShadow = true;
+    scene.add(stageMesh);
+
+    const podiumMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1.4, 2.2, 0.7),
+      new THREE.MeshStandardMaterial({ color: 0x282848, roughness: 0.3, metalness: 0.7 })
+    );
+    podiumMesh.position.set(0, 1.35, 0); podiumMesh.castShadow = true;
+    scene.add(podiumMesh);
+
+    // Back wall
+    scene.add(new THREE.Mesh(
+      new THREE.BoxGeometry(30, 14, 0.5),
+      new THREE.MeshStandardMaterial({ color: 0x121228, roughness: 0.8 })
+    ).translateZ(-7.5).translateY(7));
+
+    // Bookshelves
+    function makeBookshelf(x, y) {
+      const g = new THREE.Group();
+      const sm = new THREE.MeshStandardMaterial({ color: 0x3d2b1f, roughness: 0.7 });
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(2.8, 4.5, 0.3), sm));
+      for (let sy = -1.4; sy <= 1.4; sy += 0.93) {
+        g.add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.07, 0.32), sm).translateY(sy).translateZ(0.04));
+      }
+      const bc = [0xcc3333,0x3333cc,0x33aa33,0xccaa33,0x993399,0xcc6633,0x339999];
+      for (let row = -1.4; row <= 0.9; row += 0.93) {
+        for (let bx = -1; bx <= 1; bx += 0.21) {
+          const h = 0.4 + Math.random() * 0.35;
+          const bk = new THREE.Mesh(
+            new THREE.BoxGeometry(0.16, h, 0.18),
+            new THREE.MeshStandardMaterial({ color: bc[Math.floor(Math.random()*bc.length)], roughness: 0.6 })
+          );
+          bk.position.set(bx, row + 0.47 + h/2 - 0.38, 0.08);
+          g.add(bk);
+        }
+      }
+      g.position.set(x, y, -7);
+      return g;
+    }
+    scene.add(makeBookshelf(-8, 5.5));
+    scene.add(makeBookshelf(-5, 5.5));
+    scene.add(makeBookshelf(5, 5.5));
+    scene.add(makeBookshelf(8, 5.5));
+
+    // Side walls
+    for (const sx of [-14, 14]) {
+      scene.add(new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 14, 20),
+        new THREE.MeshStandardMaterial({ color: 0x0e0e22, roughness: 0.9 })
+      ).translateX(sx).translateY(7).translateZ(-2));
+    }
+    // Ceiling
+    scene.add(new THREE.Mesh(
+      new THREE.BoxGeometry(30, 0.5, 24),
+      new THREE.MeshStandardMaterial({ color: 0x0b0b1c, roughness: 0.9 })
+    ).translateY(14).translateZ(-2));
+
+    // Pedestals (procedural)
+    scene.add(new THREE.Mesh(
+      new THREE.CylinderGeometry(0.9, 1.1, 1, 16),
+      new THREE.MeshStandardMaterial({ color: 0x2a1128, roughness: 0.3, metalness: 0.6 })
+    ).translateX(-4.5).translateY(0.5).translateZ(1));
+    scene.add(new THREE.Mesh(
+      new THREE.CylinderGeometry(0.9, 1.1, 1, 16),
+      new THREE.MeshStandardMaterial({ color: 0x0e1c2a, roughness: 0.3, metalness: 0.6 })
+    ).translateX(4.5).translateY(0.5).translateZ(1));
+
+    // 3D Scoreboard
+    const sbGroup = new THREE.Group();
+    sbGroup.position.set(0, 8.5, -5);
+    sbGroup.add(new THREE.Mesh(
+      new THREE.BoxGeometry(8, 2.5, 0.2),
+      new THREE.MeshStandardMaterial({ color: 0x151530, roughness: 0.3, metalness: 0.7 })
+    ));
+    const frameMat2 = new THREE.MeshBasicMaterial({ color: 0x3355aa });
+    const ft = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.06, 0.06), frameMat2); ft.position.y = 1.25; sbGroup.add(ft);
+    const fb = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.06, 0.06), frameMat2); fb.position.y = -1.25; sbGroup.add(fb);
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.5, 0.06), frameMat2); fl.position.x = -4.1; sbGroup.add(fl);
+    const fr = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.5, 0.06), frameMat2); fr.position.x = 4.1; sbGroup.add(fr);
+    scene.add(sbGroup);
   }
-  const bc = [0xcc3333,0x3333cc,0x33aa33,0xccaa33,0x993399,0xcc6633,0x339999];
-  for (let row = -1.4; row <= 0.9; row += 0.93) {
-    for (let bx = -1; bx <= 1; bx += 0.21) {
-      const h = 0.4 + Math.random() * 0.35;
-      const bk = new THREE.Mesh(
-        new THREE.BoxGeometry(0.16, h, 0.18),
-        new THREE.MeshStandardMaterial({ color: bc[Math.floor(Math.random()*bc.length)], roughness: 0.6 })
-      );
-      bk.position.set(bx, row + 0.47 + h/2 - 0.38, 0.08);
-      g.add(bk);
+
+  // VS text on podium (always procedural sprite)
+  const vsSprite = makeSprite("VS", "#6688aa", 64, 128, 128);
+  vsSprite.position.set(0, 2.7, 0.4);
+  vsSprite.scale.set(1.2, 1.2, 1);
+  scene.add(vsSprite);
+
+  // ==================== PLAYER (Brain) ====================
+  brainGroup = new THREE.Group();
+  brainGroup.position.set(-4.5, 2.5, 1);
+
+  if (blenderLoaded && blenderModels['Brain']) {
+    const brainModel = cloneBlenderModel('Brain');
+    brainModel.rotation.x = -Math.PI / 2;
+    brainModel.scale.set(1.0, 1.0, 1.0);
+    brainGroup.add(brainModel);
+  } else {
+    const brainCore = new THREE.Mesh(
+      new THREE.SphereGeometry(1.1, 32, 32),
+      new THREE.MeshStandardMaterial({ color: 0xff8899, roughness: 0.45, metalness: 0.1 })
+    );
+    brainGroup.add(brainCore);
+    const wrinkleMat2 = new THREE.MeshStandardMaterial({ color: 0xee7788, roughness: 0.4 });
+    for (let i = 0; i < 8; i++) {
+      const w = new THREE.Mesh(new THREE.TorusGeometry(0.6 + Math.random()*0.4, 0.07, 8, 20), wrinkleMat2);
+      w.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+      brainGroup.add(w);
+    }
+    brainGroup.add(new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.28, 0.7, 12),
+      new THREE.MeshStandardMaterial({ color: 0xdd7788, roughness: 0.5 })
+    ).translateY(-1.2));
+  }
+  brainGroup.castShadow = true;
+  scene.add(brainGroup);
+
+  const plLabel = makeSprite("PLAYER", "#ff6699", 36, 256, 64);
+  plLabel.position.set(-4.5, 4.5, 1); plLabel.scale.set(2.2, 0.6, 1);
+  scene.add(plLabel);
+
+  // ==================== AI (Robot) ====================
+  robotGroup = new THREE.Group();
+  robotGroup.position.set(4.5, 2.5, 1);
+
+  // Eye materials (used for animation regardless of model source)
+  eyeMatL = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 2 });
+  eyeMatR = eyeMatL.clone();
+  antennaBallMat = new THREE.MeshStandardMaterial({ color: 0xff3333, emissive: 0xff3333, emissiveIntensity: 2 });
+
+  if (blenderLoaded && blenderModels['Robot']) {
+    const robotModel = cloneBlenderModel('Robot');
+    robotModel.rotation.x = -Math.PI / 2;
+    robotModel.scale.set(0.75, 0.75, 0.75);
+    robotGroup.add(robotModel);
+    // Add glowing eyes on top of Blender model for animation
+    const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 12), eyeMatL);
+    leftEye.position.set(-0.32, 0.7, 0.62); robotGroup.add(leftEye);
+    const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 12), eyeMatR);
+    rightEye.position.set(0.32, 0.7, 0.62); robotGroup.add(rightEye);
+    const antennaBall = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), antennaBallMat);
+    antennaBall.position.set(0, 1.7, 0); robotGroup.add(antennaBall);
+  } else {
+    const metalM = new THREE.MeshStandardMaterial({ color: 0x88aacc, roughness: 0.2, metalness: 0.9 });
+    const darkM = new THREE.MeshStandardMaterial({ color: 0x556688, roughness: 0.3, metalness: 0.8 });
+    const robotHead = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.1, 1.1), metalM);
+    robotHead.position.y = 0.55; robotGroup.add(robotHead);
+    const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), eyeMatL);
+    leftEye.position.set(-0.32, 0.7, 0.58); robotGroup.add(leftEye);
+    const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), eyeMatR);
+    rightEye.position.set(0.32, 0.7, 0.58); robotGroup.add(rightEye);
+    robotGroup.add(new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, 0.07, 0.04),
+      new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 1 })
+    ).translateY(0.3).translateZ(0.58));
+    const robotBody = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 0.9), darkM);
+    robotBody.position.y = -0.55; robotGroup.add(robotBody);
+    robotGroup.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), metalM).translateY(1.35));
+    const antennaBall = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), antennaBallMat);
+    antennaBall.position.set(0, 1.6, 0); robotGroup.add(antennaBall);
+    for (const side of [-1, 1]) {
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.09, 1.1, 8), metalM);
+      arm.position.set(side * 1, -0.45, 0); arm.rotation.z = side * 0.2;
+      robotGroup.add(arm);
     }
   }
-  g.position.set(x, y, -7);
-  return g;
+  robotGroup.castShadow = true;
+  scene.add(robotGroup);
+
+  const aiLabel = makeSprite("AI", "#66ccff", 48, 128, 64);
+  aiLabel.position.set(4.5, 4.5, 1); aiLabel.scale.set(1.6, 0.6, 1);
+  scene.add(aiLabel);
 }
-scene.add(makeBookshelf(-8, 5.5));
-scene.add(makeBookshelf(-5, 5.5));
-scene.add(makeBookshelf(5, 5.5));
-scene.add(makeBookshelf(8, 5.5));
 
-// Side walls
-for (const sx of [-14, 14]) {
-  scene.add(new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 14, 20),
-    new THREE.MeshStandardMaterial({ color: 0x0e0e22, roughness: 0.9 })
-  ).translateX(sx).translateY(7).translateZ(-2));
-}
-// Ceiling
-scene.add(new THREE.Mesh(
-  new THREE.BoxGeometry(30, 0.5, 24),
-  new THREE.MeshStandardMaterial({ color: 0x0b0b1c, roughness: 0.9 })
-).translateY(14).translateZ(-2));
-
-// ==================== PLAYER (Brain) ====================
-const brainGroup = new THREE.Group();
-brainGroup.position.set(-4.5, 2.5, 1);
-
-const brainCore = new THREE.Mesh(
-  new THREE.SphereGeometry(1.1, 32, 32),
-  new THREE.MeshStandardMaterial({ color: 0xff8899, roughness: 0.45, metalness: 0.1 })
-);
-brainGroup.add(brainCore);
-
-const wrinkleMat = new THREE.MeshStandardMaterial({ color: 0xee7788, roughness: 0.4 });
-for (let i = 0; i < 8; i++) {
-  const w = new THREE.Mesh(new THREE.TorusGeometry(0.6 + Math.random()*0.4, 0.07, 8, 20), wrinkleMat);
-  w.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-  brainGroup.add(w);
-}
-brainGroup.add(new THREE.Mesh(
-  new THREE.CylinderGeometry(0.18, 0.28, 0.7, 12),
-  new THREE.MeshStandardMaterial({ color: 0xdd7788, roughness: 0.5 })
-).translateY(-1.2));
-brainGroup.castShadow = true;
-scene.add(brainGroup);
-
-scene.add(new THREE.Mesh(
-  new THREE.CylinderGeometry(0.9, 1.1, 1, 16),
-  new THREE.MeshStandardMaterial({ color: 0x2a1128, roughness: 0.3, metalness: 0.6 })
-).translateX(-4.5).translateY(0.5).translateZ(1));
-
-const plLabel = makeSprite("PLAYER", "#ff6699", 36, 256, 64);
-plLabel.position.set(-4.5, 4.5, 1); plLabel.scale.set(2.2, 0.6, 1);
-scene.add(plLabel);
-
-// ==================== AI (Robot) ====================
-const robotGroup = new THREE.Group();
-robotGroup.position.set(4.5, 2.5, 1);
-
-const metalM = new THREE.MeshStandardMaterial({ color: 0x88aacc, roughness: 0.2, metalness: 0.9 });
-const darkM = new THREE.MeshStandardMaterial({ color: 0x556688, roughness: 0.3, metalness: 0.8 });
-
-const robotHead = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.1, 1.1), metalM);
-robotHead.position.y = 0.55; robotGroup.add(robotHead);
-
-const eyeMatL = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 2 });
-const eyeMatR = eyeMatL.clone();
-const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), eyeMatL);
-leftEye.position.set(-0.32, 0.7, 0.58); robotGroup.add(leftEye);
-const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), eyeMatR);
-rightEye.position.set(0.32, 0.7, 0.58); robotGroup.add(rightEye);
-
-robotGroup.add(new THREE.Mesh(
-  new THREE.BoxGeometry(0.6, 0.07, 0.04),
-  new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 1 })
-).translateY(0.3).translateZ(0.58));
-
-const robotBody = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 0.9), darkM);
-robotBody.position.y = -0.55; robotGroup.add(robotBody);
-
-robotGroup.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), metalM).translateY(1.35));
-const antennaBallMat = new THREE.MeshStandardMaterial({ color: 0xff3333, emissive: 0xff3333, emissiveIntensity: 2 });
-const antennaBall = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), antennaBallMat);
-antennaBall.position.set(0, 1.6, 0); robotGroup.add(antennaBall);
-
-for (const side of [-1, 1]) {
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.09, 1.1, 8), metalM);
-  arm.position.set(side * 1, -0.45, 0); arm.rotation.z = side * 0.2;
-  robotGroup.add(arm);
-}
-robotGroup.castShadow = true;
-scene.add(robotGroup);
-
-scene.add(new THREE.Mesh(
-  new THREE.CylinderGeometry(0.9, 1.1, 1, 16),
-  new THREE.MeshStandardMaterial({ color: 0x0e1c2a, roughness: 0.3, metalness: 0.6 })
-).translateX(4.5).translateY(0.5).translateZ(1));
-
-const aiLabel = makeSprite("AI", "#66ccff", 48, 128, 64);
-aiLabel.position.set(4.5, 4.5, 1); aiLabel.scale.set(1.6, 0.6, 1);
-scene.add(aiLabel);
-
-// ==================== SCOREBOARD (3D floating) ====================
-// Large 3D scoreboard above stage
-const sbGroup = new THREE.Group();
-sbGroup.position.set(0, 8.5, -5);
-
-const sbBg = new THREE.Mesh(
-  new THREE.BoxGeometry(8, 2.5, 0.2),
-  new THREE.MeshStandardMaterial({ color: 0x151530, roughness: 0.3, metalness: 0.7 })
-);
-sbGroup.add(sbBg);
-
-// Glow frame
-const frameMat = new THREE.MeshBasicMaterial({ color: 0x3355aa });
-const frameTop = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.06, 0.06), frameMat);
-frameTop.position.y = 1.25; sbGroup.add(frameTop);
-const frameBot = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.06, 0.06), frameMat);
-frameBot.position.y = -1.25; sbGroup.add(frameBot);
-const frameLeft = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.5, 0.06), frameMat);
-frameLeft.position.x = -4.1; sbGroup.add(frameLeft);
-const frameRight = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.5, 0.06), frameMat);
-frameRight.position.x = 4.1; sbGroup.add(frameRight);
-
-scene.add(sbGroup);
+// Initialize scene after loading models
+loadBlenderModels().then(() => { buildScene(); });
 
 // ==================== PARTICLE SYSTEM ====================
 const PC = 300;
@@ -705,6 +845,7 @@ function showQuestion() {
 }
 
 function flashRobotEyes(ok) {
+  if (!eyeMatL || !eyeMatR) return;
   const c = ok ? 0x00ff00 : 0xff0000;
   eyeMatL.color.setHex(c); eyeMatL.emissive.setHex(c);
   eyeMatR.color.setHex(c); eyeMatR.emissive.setHex(c);
@@ -825,18 +966,21 @@ function animate() {
   const dt = clock.getDelta();
   elapsed += dt;
 
-  // Brain hover + rotate
-  brainGroup.position.y = 2.5 + Math.sin(elapsed * 1.5) * 0.2;
-  brainGroup.rotation.y = elapsed * 0.3;
+  // Guard: wait for scene to be built
+  if (brainGroup && robotGroup) {
+    // Brain hover + rotate
+    brainGroup.position.y = 2.5 + Math.sin(elapsed * 1.5) * 0.2;
+    brainGroup.rotation.y = elapsed * 0.3;
 
-  // Robot hover
-  robotGroup.position.y = 2.5 + Math.sin(elapsed * 1.8 + 1) * 0.12;
+    // Robot hover
+    robotGroup.position.y = 2.5 + Math.sin(elapsed * 1.8 + 1) * 0.12;
+  }
 
   // Antenna blink
-  antennaBallMat.emissiveIntensity = 1.5 + Math.sin(elapsed * 5) * 1.5;
+  if (antennaBallMat) antennaBallMat.emissiveIntensity = 1.5 + Math.sin(elapsed * 5) * 1.5;
 
   // Stage ring color cycle
-  ringMat.color.setHSL((elapsed * 0.05) % 1, 0.6, 0.45);
+  if (ringMat) ringMat.color.setHSL((elapsed * 0.05) % 1, 0.6, 0.45);
 
   // Timer
   if (gameState === 'playing' && !answered) {
